@@ -1,23 +1,31 @@
-// using { } from '@sap/cds/common';
+
+// using { managed, cuid } from '@sap/cds/common';
 
 // service OCRService {
-//    entity Dummy {
-//     ID: UUID;
+
+
+//    entity ocr : cuid, managed {
+//     filename      : String;
+//     extractedText : LargeString;
+//     pageCount     : Integer;
+//     fileSize      : Integer;
 //   }
-//    @odata.action
-//   action READ_PDF() returns String;
-// }
-
-// using { } from '@sap/cds/common';
-
-// service OCRService {
-//   action READ_PDF(filename: String) returns String;
+//   // Use 'function' for GET or keep 'action' for POST
+//   function READ_PDF(filename: String) returns String;
 // }
 
 
-using { } from '@sap/cds/common';
+
+using { managed } from '@sap/cds/common';
 
 service OCRService {
-  // Use 'function' for GET or keep 'action' for POST
+  entity ocr : managed {
+    key ID        : UUID;
+    filename      : String;
+    extractedText : LargeString;
+    pageCount     : Integer;
+    fileSize      : Integer;
+  }
+  
   function READ_PDF(filename: String) returns String;
 }
