@@ -542,104 +542,302 @@ module.exports = cds.service.impl(function () {
     }
   });
 
-  /**
-   * Helper function to parse invoice header data from text
-   */
-  this.parseInvoiceHeader = (text) => {
-    const data = {
-      documentNumber: null,
-      documentDate: null,
-      dueDate: null,
-      supplierName: null,
-      supplierAddress: null,
-      customerName: null,
-      customerAddress: null,
-      subtotal: null,
-      taxAmount: null,
-      totalAmount: null,
-      currency: 'USD',
-      paymentTerms: null
-    };
+  // /**
+  //  * Helper function to parse invoice header data from text
+  //  */
+  // this.parseInvoiceHeader = (text) => {
+  //   const data = {
+  //     documentNumber: null,
+  //     documentDate: null,
+  //     dueDate: null,
+  //     supplierName: null,
+  //     supplierAddress: null,
+  //     customerName: null,
+  //     customerAddress: null,
+  //     subtotal: null,
+  //     taxAmount: null,
+  //     totalAmount: null,
+  //     currency: 'USD',
+  //     paymentTerms: null
+  //   };
 
-    try {
-      // Extract invoice/document number
-      const invoiceMatch = text.match(/(?:Invoice|Number)[\s:]+(\d+)/i);
-      if (invoiceMatch) {
-        data.documentNumber = invoiceMatch[1];
-      }
+  //   try {
+  //     // Extract invoice/document number
+  //     const invoiceMatch = text.match(/(?:Invoice|Number)[\s:]+(\d+)/i);
+  //     if (invoiceMatch) {
+  //       data.documentNumber = invoiceMatch[1];
+  //     }
 
-      // Extract date (formats: 2/18/2019, 02/18/2019, 2019-02-18)
-      const dateMatch = text.match(/Date[\s:]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i);
-      if (dateMatch) {
-        data.documentDate = dateMatch[1];
-      }
+  //     // Extract date (formats: 2/18/2019, 02/18/2019, 2019-02-18)
+  //     const dateMatch = text.match(/Date[\s:]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i);
+  //     if (dateMatch) {
+  //       data.documentDate = dateMatch[1];
+  //     }
 
-      // Extract supplier name (from first line or header)
-      const supplierMatch = text.match(/^([A-Za-z\s&]+(?:Inc|LLC|Ltd|Corp)?)/m);
-      if (supplierMatch) {
-        data.supplierName = supplierMatch[1].trim();
-      }
+  //     // Extract supplier name (from first line or header)
+  //     const supplierMatch = text.match(/^([A-Za-z\s&]+(?:Inc|LLC|Ltd|Corp)?)/m);
+  //     if (supplierMatch) {
+  //       data.supplierName = supplierMatch[1].trim();
+  //     }
 
-      // Extract total amount
-      const totalMatch = text.match(/Total(?:\s+Amount)?(?:\s+Due)?[\s:]+\$?[\s]*([\d,]+\.\d{2})/i);
-      if (totalMatch) {
-        data.totalAmount = parseFloat(totalMatch[1].replace(/,/g, ''));
-      }
+  //     // Extract total amount
+  //     const totalMatch = text.match(/Total(?:\s+Amount)?(?:\s+Due)?[\s:]+\$?[\s]*([\d,]+\.\d{2})/i);
+  //     if (totalMatch) {
+  //       data.totalAmount = parseFloat(totalMatch[1].replace(/,/g, ''));
+  //     }
 
-      // Extract customer name (Bill To section)
-      const customerMatch = text.match(/Bill\s+To[:\s]+([^\n]+)/i);
-      if (customerMatch) {
-        data.customerName = customerMatch[1].trim();
-      }
+  //     // Extract customer name (Bill To section)
+  //     const customerMatch = text.match(/Bill\s+To[:\s]+([^\n]+)/i);
+  //     if (customerMatch) {
+  //       data.customerName = customerMatch[1].trim();
+  //     }
 
-      // Extract payment terms
-      const termsMatch = text.match(/(?:Payment\s+)?Terms[\s:]+([^\n]+)/i);
-      if (termsMatch) {
-        data.paymentTerms = termsMatch[1].trim();
-      }
+  //     // Extract payment terms
+  //     const termsMatch = text.match(/(?:Payment\s+)?Terms[\s:]+([^\n]+)/i);
+  //     if (termsMatch) {
+  //       data.paymentTerms = termsMatch[1].trim();
+  //     }
 
-    } catch (error) {
-      console.error('Error parsing invoice header:', error);
-    }
+  //   } catch (error) {
+  //     console.error('Error parsing invoice header:', error);
+  //   }
 
-    return data;
+  //   return data;
+  // };
+
+
+
+
+  
+/**
+ * Improved header parser for ABC Communications format
+ */
+this.parseInvoiceHeader = (text) => {
+  const data = {
+    documentNumber: null,
+    documentDate: null,
+    dueDate: null,
+    supplierName: null,
+    supplierAddress: null,
+    customerName: null,
+    customerAddress: null,
+    subtotal: null,
+    taxAmount: null,
+    totalAmount: null,
+    currency: 'USD',
+    paymentTerms: null
   };
 
-  /**
-   * Helper function to parse line items from text
-   */
-  this.parseLineItems = (text) => {
-    const items = [];
+  try {
+    // Extract invoice number
+    const invoiceMatch = text.match(/(?:Invoice|Number)[\s:]+(\d+)/i);
+    if (invoiceMatch) {
+      data.documentNumber = invoiceMatch[1];
+    }
 
-    try {
-      // This is a simple parser - you may need to adjust based on your PDF format
-      // Looking for patterns like: Description Qty Price Total
-      const lines = text.split('\n');
+    // Extract date
+    const dateMatch = text.match(/Date[\s:]+(\d{1,2}\/\d{1,2}\/\d{4})/i);
+    if (dateMatch) {
+      data.documentDate = dateMatch[1];
+    }
+
+    // Extract supplier name
+    const supplierMatch = text.match(/^([A-Z][A-Za-z\s&]+(?:Inc|LLC|Ltd|Corp|Communication|Communications)?)\s+Invoice/m);
+    if (supplierMatch) {
+      data.supplierName = supplierMatch[1].trim();
+    }
+
+    // Extract supplier address (line after company name)
+    const addressMatch = text.match(/(\d+\s+[A-Z][A-Za-z\s.]+(?:Blvd|St|Ave|Road|Drive)[.,]?\s+[A-Za-z\s,]+\d{4,5})/);
+    if (addressMatch) {
+      data.supplierAddress = addressMatch[1].trim();
+    }
+
+    // Extract customer name (Bill To section)
+    const customerMatch = text.match(/Bill\s+To\s+.*?\n\s*([A-Z][A-Za-z\s]+)/i);
+    if (customerMatch) {
+      data.customerName = customerMatch[1].trim();
+    }
+
+    // Extract customer address
+    const custAddrMatch = text.match(/Bill\s+To\s+.*?\n\s*[A-Za-z\s]+\n\s*(\d+\s+[A-Z][A-Za-z\s.]+)/i);
+    if (custAddrMatch) {
+      data.customerAddress = custAddrMatch[1].trim();
+    }
+
+    // Extract Item Total (subtotal)
+    const subtotalMatch = text.match(/Item Total:\s+\$\s*([\d,]+\.\d{2})/i);
+    if (subtotalMatch) {
+      data.subtotal = parseFloat(subtotalMatch[1].replace(/,/g, ''));
+    }
+
+    // Extract Sales Tax
+    const taxMatch = text.match(/Sales Tax:\s+\$\s*([\d,]+\.\d{2})/i);
+    if (taxMatch) {
+      data.taxAmount = parseFloat(taxMatch[1].replace(/,/g, ''));
+    }
+
+    // Extract Total Amount Due
+    const totalMatch = text.match(/Total Amount Due:\s+\$\s*([\d,]+\.\d{2})/i);
+    if (totalMatch) {
+      data.totalAmount = parseFloat(totalMatch[1].replace(/,/g, ''));
+    }
+
+    // Extract payment terms
+    const termsMatch = text.match(/Terms\s+([^\n]+)/i);
+    if (termsMatch) {
+      data.paymentTerms = termsMatch[1].trim();
+    }
+
+  } catch (error) {
+    console.error('Error parsing invoice header:', error);
+  }
+
+  return data;
+};
+
+  // /**
+  //  * Helper function to parse line items from text
+  //  */
+  // this.parseLineItems = (text) => {
+  //   const items = [];
+
+  //   try {
+  //     // This is a simple parser - you may need to adjust based on your PDF format
+  //     // Looking for patterns like: Description Qty Price Total
+  //     const lines = text.split('\n');
       
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
+  //     for (let i = 0; i < lines.length; i++) {
+  //       const line = lines[i].trim();
         
-        // Try to match line item pattern: description followed by numbers
-        // Example: "Product Name 5 $10.00 $50.00"
-        const itemMatch = line.match(/^(.+?)\s+(\d+(?:\.\d+)?)\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})$/);
+  //       // Try to match line item pattern: description followed by numbers
+  //       // Example: "Product Name 5 $10.00 $50.00"
+  //       const itemMatch = line.match(/^(.+?)\s+(\d+(?:\.\d+)?)\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})$/);
         
-        if (itemMatch) {
+  //       if (itemMatch) {
+  //         items.push({
+  //           description: itemMatch[1].trim(),
+  //           quantity: parseFloat(itemMatch[2]),
+  //           unitPrice: parseFloat(itemMatch[3].replace(/,/g, '')),
+  //           lineTotal: parseFloat(itemMatch[4].replace(/,/g, '')),
+  //           unit: 'EA',
+  //           code: null
+  //         });
+  //       }
+  //     }
+
+  //   } catch (error) {
+  //     console.error('Error parsing line items:', error);
+  //   }
+
+  //   return items;
+  // };
+
+  /**
+ * Improved parser specifically for ABC Communications invoice format
+ */
+this.parseLineItems = (text) => {
+  const items = [];
+
+  try {
+    const lines = text.split('\n');
+    let inItemSection = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Detect start of line items section
+      if (/Part Number\s+Description\s+Qty.*UOM.*Price.*Total/i.test(line)) {
+        inItemSection = true;
+        continue;
+      }
+      
+      // Detect end of line items section
+      if (/Item Total:|Sales Tax:|Total Amount Due:/i.test(line)) {
+        inItemSection = false;
+        break;
+      }
+      
+      if (inItemSection && line) {
+        // Pattern for ABC Communications format:
+        // Part# Description Qty UOM Price Total
+        // Example: "2001 Professional Service 1—Labor 2.00 HR $ 55.00 $ 110.00"
+        
+        // Try to match: PartNumber Description Quantity Unit Price Total
+        const match = line.match(/^(\d+)\s+(.+?)\s+(\d+\.\d{2})\s+([A-Z]{2,3})\s+\$\s*([\d,]+\.\d{2})\s+\$\s*([\d,]+\.\d{2})$/);
+        
+        if (match) {
           items.push({
-            description: itemMatch[1].trim(),
-            quantity: parseFloat(itemMatch[2]),
-            unitPrice: parseFloat(itemMatch[3].replace(/,/g, '')),
-            lineTotal: parseFloat(itemMatch[4].replace(/,/g, '')),
-            unit: 'EA',
-            code: null
+            code: match[1],
+            description: match[2].trim(),
+            quantity: parseFloat(match[3]),
+            unit: match[4],
+            unitPrice: parseFloat(match[5].replace(/,/g, '')),
+            lineTotal: parseFloat(match[6].replace(/,/g, ''))
           });
+        } else {
+          // Some descriptions may span multiple lines
+          // Check if this looks like a part number line
+          const partMatch = line.match(/^(\d+)\s+(.+)/);
+          if (partMatch) {
+            const partNumber = partMatch[1];
+            let description = partMatch[2];
+            
+            // Check next line(s) for continuation and numbers
+            let j = i + 1;
+            while (j < lines.length && lines[j].trim()) {
+              const nextLine = lines[j].trim();
+              
+              // Check if this line has the quantity and prices
+              const numMatch = nextLine.match(/^(.+?)\s+(\d+\.\d{2})\s+([A-Z]{2,3})\s+\$\s*([\d,]+\.\d{2})\s+\$\s*([\d,]+\.\d{2})$/);
+              
+              if (numMatch) {
+                // This line has the numbers
+                description += ' ' + numMatch[1].trim();
+                items.push({
+                  code: partNumber,
+                  description: description.trim(),
+                  quantity: parseFloat(numMatch[2]),
+                  unit: numMatch[3],
+                  unitPrice: parseFloat(numMatch[4].replace(/,/g, '')),
+                  lineTotal: parseFloat(numMatch[5].replace(/,/g, ''))
+                });
+                i = j; // Skip the lines we've processed
+                break;
+              } else if (/^\d+\.\d{2}\s+[A-Z]{2,3}\s+\$/.test(nextLine)) {
+                // Numbers are on this line
+                const numOnlyMatch = nextLine.match(/^(\d+\.\d{2})\s+([A-Z]{2,3})\s+\$\s*([\d,]+\.\d{2})\s+\$\s*([\d,]+\.\d{2})$/);
+                if (numOnlyMatch) {
+                  items.push({
+                    code: partNumber,
+                    description: description.trim(),
+                    quantity: parseFloat(numOnlyMatch[1]),
+                    unit: numOnlyMatch[2],
+                    unitPrice: parseFloat(numOnlyMatch[3].replace(/,/g, '')),
+                    lineTotal: parseFloat(numOnlyMatch[4].replace(/,/g, ''))
+                  });
+                  i = j;
+                  break;
+                }
+              } else {
+                // Continue reading description
+                description += ' ' + nextLine;
+                j++;
+              }
+            }
+          }
         }
       }
-
-    } catch (error) {
-      console.error('Error parsing line items:', error);
     }
 
-    return items;
-  };
+  } catch (error) {
+    console.error('Error parsing line items:', error);
+  }
+
+  return items;
+};
+
+
+  
 
 });
