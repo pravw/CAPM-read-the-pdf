@@ -52,12 +52,47 @@
 //   action reprocessDocument(documentId: UUID) returns String;
 // }
 
+
+// final
+
+// using { ocr.db } from '../db/schema';
+
+// service OCRService {
+  
+//   // Expose entities for CRUD
+//   entity PDFDocuments as projection on db.PDFDocuments;
+//   entity InvoiceData as projection on db.InvoiceData;
+  
+//   // Read PDF text only
+//   function readPDF(filename: String) returns String;
+  
+//   // Process and save to database
+//   action processPDF(filename: String) returns {
+//     success: Boolean;
+//     documentId: String;
+//     text: String;
+//     message: String;
+//   };
+  
+//   // Export functions
+//   function exportToCSV() returns String;
+//   function exportToJSON() returns String;
+// }
+
+
+
+// enhanced
+
+
+
 using { ocr.db } from '../db/schema';
 
 service OCRService {
   
   // Expose entities for CRUD
   entity PDFDocuments as projection on db.PDFDocuments;
+  entity DocumentHeaders as projection on db.DocumentHeaders;
+  entity LineItems as projection on db.LineItems;
   entity InvoiceData as projection on db.InvoiceData;
   
   // Read PDF text only
@@ -67,6 +102,7 @@ service OCRService {
   action processPDF(filename: String) returns {
     success: Boolean;
     documentId: String;
+    headerId: String;
     text: String;
     message: String;
   };

@@ -335,13 +335,19 @@
 
 
 
+
+
+
+// enhanced
+
 const cds = require('@sap/cds');
 const fs = require('fs').promises;
 const path = require('path');
-const { PDFParse } = require('pdf-parse');
+// const pdfParse = require('pdf-parse');
+const pdfParse = require('pdf-parse').default || require('pdf-parse');
 
 module.exports = cds.service.impl(function () {
-  const { PDFDocuments, InvoiceData } = this.entities;
+  const { PDFDocuments, DocumentHeaders, LineItems, InvoiceData } = this.entities;
 
   /**
    * Simple function to read PDF text only
@@ -353,15 +359,14 @@ module.exports = cds.service.impl(function () {
     try {
       await fs.access(pdfPath);
       const dataBuffer = await fs.readFile(pdfPath);
-      const parser = new PDFParse({ data: dataBuffer, verbosity: 0 });
-      const result = await parser.getText();
+      const data = await pdfParse(dataBuffer);
       
-      if (!result.text || result.text.trim().length === 0) {
+      if (!data.text || data.text.trim().length === 0) {
         req.error(400, 'No text found in PDF.');
         return;
       }
       
-      return result.text;
+      return data.text;
     } catch (error) {
       console.error('Error processing PDF:', error);
       req.error(500, `Failed to process PDF: ${error.message}`);
@@ -369,7 +374,7 @@ module.exports = cds.service.impl(function () {
   });
 
   /**
-   * Process PDF and save to database
+   * Process PDF and save to database with headers and line items
    */
   this.on('processPDF', async (req) => {
     const filename = req.data.filename || 'sample.pdf';
@@ -384,52 +389,100 @@ module.exports = cds.service.impl(function () {
       console.log(`✓ PDF loaded: ${dataBuffer.length} bytes`);
 
       console.log('Step 3: Extracting text from PDF...');
-      const parser = new PDFParse({ data: dataBuffer, verbosity: 0 });
-      const result = await parser.getText();
-      const extractedText = result.text;
-      console.log(`✓ Extracted: ${extractedText.length} characters, ${result.total} pages`);
+      const data = await pdfParse(dataBuffer);
+      const extractedText = data.text;
+      console.log(`✓ Extracted: ${extractedText.length} characters, ${data.numpages} pages`);
 
       if (!extractedText || extractedText.trim().length === 0) {
         return {
           success: false,
           documentId: null,
+          headerId: null,
           text: '',
           message: 'No text found in PDF'
         };
       }
 
-      console.log('Step 4: Parsing structured data...');
-      const parsedData = this.parseInvoiceData(extractedText);
-      console.log('✓ Parsed invoice data:', parsedData);
+      console.log('Step 4: Parsing invoice header data...');
+      const headerData = this.parseInvoiceHeader(extractedText);
+      console.log('✓ Parsed header data:', headerData);
 
-      console.log('Step 5: Saving to database...');
+      console.log('Step 5: Parsing line items...');
+      const lineItems = this.parseLineItems(extractedText);
+      console.log(`✓ Parsed ${lineItems.length} line items`);
+
+      console.log('Step 6: Saving to database...');
       const documentId = cds.utils.uuid();
       
+      // Save PDF Document
       await INSERT.into(PDFDocuments).entries({
         ID: documentId,
         filename: filename,
         uploadDate: new Date().toISOString(),
         extractedText: extractedText,
-        pageCount: result.total,
+        pageCount: data.numpages,
         fileSize: stats.size,
         status: 'Processed'
       });
       console.log(`✓ Created PDF Document: ${documentId}`);
 
-      // Save invoice data if found
-      if (parsedData.invoiceNumber) {
-        const invoiceId = cds.utils.uuid();
-        await INSERT.into(InvoiceData).entries({
-          ID: invoiceId,
+      let headerId = null;
+
+      // Save Document Header if found
+      if (headerData.documentNumber) {
+        headerId = cds.utils.uuid();
+        await INSERT.into(DocumentHeaders).entries({
+          ID: headerId,
           document_ID: documentId,
-          invoiceNumber: parsedData.invoiceNumber,
-          invoiceDate: parsedData.invoiceDate,
-          customerName: parsedData.customerName,
-          totalAmount: parsedData.totalAmount,
-          currency: parsedData.currency,
-          extractedFields: JSON.stringify(parsedData)
+          documentType: 'INVOICE',
+          documentNumber: headerData.documentNumber,
+          documentDate: headerData.documentDate,
+          dueDate: headerData.dueDate,
+          supplierName: headerData.supplierName,
+          supplierAddress: headerData.supplierAddress,
+          customerName: headerData.customerName,
+          customerAddress: headerData.customerAddress,
+          subtotal: headerData.subtotal,
+          taxAmount: headerData.taxAmount,
+          totalAmount: headerData.totalAmount,
+          currency: headerData.currency,
+          paymentTerms: headerData.paymentTerms,
+          extractedFields: JSON.stringify(headerData)
         });
-        console.log('✓ Saved invoice data');
+        console.log(`✓ Created Document Header: ${headerId}`);
+
+        // Save Line Items
+        if (lineItems.length > 0) {
+          const lineItemEntries = lineItems.map((item, index) => ({
+            ID: cds.utils.uuid(),
+            header_ID: headerId,
+            lineNumber: index + 1,
+            itemDescription: item.description,
+            itemCode: item.code,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            lineTotal: item.lineTotal,
+            unit: item.unit
+          }));
+          
+          await INSERT.into(LineItems).entries(lineItemEntries);
+          console.log(`✓ Saved ${lineItemEntries.length} line items`);
+        }
+      }
+
+      // Also save to old InvoiceData for backward compatibility
+      if (headerData.documentNumber) {
+        await INSERT.into(InvoiceData).entries({
+          ID: cds.utils.uuid(),
+          document_ID: documentId,
+          invoiceNumber: headerData.documentNumber,
+          invoiceDate: headerData.documentDate,
+          customerName: headerData.customerName,
+          totalAmount: headerData.totalAmount,
+          currency: headerData.currency,
+          extractedFields: JSON.stringify(headerData)
+        });
+        console.log('✓ Saved invoice data (legacy)');
       }
 
       console.log('✅ PDF processing completed successfully!');
@@ -437,6 +490,7 @@ module.exports = cds.service.impl(function () {
       return {
         success: true,
         documentId: documentId,
+        headerId: headerId,
         text: extractedText.substring(0, 500) + '...', // Preview
         message: `Successfully processed ${filename}`
       };
@@ -447,6 +501,7 @@ module.exports = cds.service.impl(function () {
       return {
         success: false,
         documentId: null,
+        headerId: null,
         text: '',
         message: error.message
       };
@@ -488,47 +543,103 @@ module.exports = cds.service.impl(function () {
   });
 
   /**
-   * Helper function to parse invoice data from text
+   * Helper function to parse invoice header data from text
    */
-  this.parseInvoiceData = (text) => {
+  this.parseInvoiceHeader = (text) => {
     const data = {
-      invoiceNumber: null,
-      invoiceDate: null,
+      documentNumber: null,
+      documentDate: null,
+      dueDate: null,
+      supplierName: null,
+      supplierAddress: null,
       customerName: null,
+      customerAddress: null,
+      subtotal: null,
+      taxAmount: null,
       totalAmount: null,
-      currency: 'USD'
+      currency: 'USD',
+      paymentTerms: null
     };
 
     try {
-      // Extract invoice number
+      // Extract invoice/document number
       const invoiceMatch = text.match(/(?:Invoice|Number)[\s:]+(\d+)/i);
       if (invoiceMatch) {
-        data.invoiceNumber = invoiceMatch[1];
+        data.documentNumber = invoiceMatch[1];
       }
 
       // Extract date (formats: 2/18/2019, 02/18/2019, 2019-02-18)
       const dateMatch = text.match(/Date[\s:]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i);
       if (dateMatch) {
-        data.invoiceDate = dateMatch[1];
+        data.documentDate = dateMatch[1];
+      }
+
+      // Extract supplier name (from first line or header)
+      const supplierMatch = text.match(/^([A-Za-z\s&]+(?:Inc|LLC|Ltd|Corp)?)/m);
+      if (supplierMatch) {
+        data.supplierName = supplierMatch[1].trim();
       }
 
       // Extract total amount
-      const totalMatch = text.match(/Total Amount Due[\s:]+\$[\s]*([\d,]+\.\d{2})/i);
+      const totalMatch = text.match(/Total(?:\s+Amount)?(?:\s+Due)?[\s:]+\$?[\s]*([\d,]+\.\d{2})/i);
       if (totalMatch) {
-        data.totalAmount = parseFloat(totalMatch[1].replace(',', ''));
+        data.totalAmount = parseFloat(totalMatch[1].replace(/,/g, ''));
       }
 
       // Extract customer name (Bill To section)
-      const customerMatch = text.match(/Bill To[\s\n]+([^\n]+)/i);
+      const customerMatch = text.match(/Bill\s+To[:\s]+([^\n]+)/i);
       if (customerMatch) {
         data.customerName = customerMatch[1].trim();
       }
 
+      // Extract payment terms
+      const termsMatch = text.match(/(?:Payment\s+)?Terms[\s:]+([^\n]+)/i);
+      if (termsMatch) {
+        data.paymentTerms = termsMatch[1].trim();
+      }
+
     } catch (error) {
-      console.error('Error parsing invoice data:', error);
+      console.error('Error parsing invoice header:', error);
     }
 
     return data;
+  };
+
+  /**
+   * Helper function to parse line items from text
+   */
+  this.parseLineItems = (text) => {
+    const items = [];
+
+    try {
+      // This is a simple parser - you may need to adjust based on your PDF format
+      // Looking for patterns like: Description Qty Price Total
+      const lines = text.split('\n');
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Try to match line item pattern: description followed by numbers
+        // Example: "Product Name 5 $10.00 $50.00"
+        const itemMatch = line.match(/^(.+?)\s+(\d+(?:\.\d+)?)\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})$/);
+        
+        if (itemMatch) {
+          items.push({
+            description: itemMatch[1].trim(),
+            quantity: parseFloat(itemMatch[2]),
+            unitPrice: parseFloat(itemMatch[3].replace(/,/g, '')),
+            lineTotal: parseFloat(itemMatch[4].replace(/,/g, '')),
+            unit: 'EA',
+            code: null
+          });
+        }
+      }
+
+    } catch (error) {
+      console.error('Error parsing line items:', error);
+    }
+
+    return items;
   };
 
 });
