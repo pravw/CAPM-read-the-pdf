@@ -3,17 +3,31 @@
   "version": "1.0.0",
   "description": "A simple CAP project.",
   "dependencies": {
-    "@sap/cds": "^9",
-    "express": "^4",
+    "@sap/cds": "^9.4.5",
+    "express": "^4.21.2",
     "multer": "^2.0.2",
     "pdf-parse": "^2.4.5",
     "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
-    "@cap-js/sqlite": "^2"
+    "@cap-js/sqlite": "^2",
+    "@sap/cds-dk": "^8.9.11",
+    "sqlite3": "^5.1.7"
   },
   "scripts": {
-    "start": "cds-serve"
+    "start": "cds-serve",
+    "watch": "cds watch",
+    "deploy": "cds deploy --to sqlite"
+  },
+  "cds": {
+    "requires": {
+      "db": {
+        "kind": "sqlite",
+         "credentials": {
+          "url": "db.sqlite"
+        }
+      }
+    }
   },
   "private": true
 }
